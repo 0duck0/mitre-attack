@@ -255,7 +255,10 @@ async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
           return asToolResult({
             status: "warning",
             message: `Technique found in multiple domains: ${matches.map((m) => m.domain).join(", ")}`,
-            data: matches.map((match) => ({ domain: match.domain, ...match.result.data }))
+            data: matches.map((match) => ({
+              domain: match.domain,
+              ...(match.result.data as Record<string, unknown>)
+            }))
           });
         }
 
@@ -340,7 +343,7 @@ async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
             target.matches = mergedMatches.slice(0, topN);
           });
           return acc;
-        }, [] as Array<{ chunk: string; startOffset: number; endOffset: number; matches: any[] }>);
+        }, [] as Array<{ chunk: string; startOffset: number; endOffset: number; matches: Array<{ confidence: number }> }>);
 
         return asToolResult({
           status: "ok",
@@ -403,7 +406,7 @@ async function handleRequest(request: JsonRpcRequest): Promise<void> {
 function startServer(): void {
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
 
-  rl.on("line", (line) => {
+  rl.on("line", (line: string) => {
     if (!line.trim()) return;
 
     try {

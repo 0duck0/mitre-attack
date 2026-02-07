@@ -23,7 +23,7 @@ export function loadEmbeddings(dataDir: string): EmbeddingsLoadResult {
   }
 
   const raw = readFileSync(embeddingsPath, "utf8");
-  const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const lines = raw.split(/\r?\n/).filter((line: string) => line.trim().length > 0);
 
   let meta: EmbeddingsMeta | null = null;
 

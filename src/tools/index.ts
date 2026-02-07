@@ -10,6 +10,7 @@ export type ToolResponse<T> = {
   status: "ok" | "warning" | "error";
   message: string;
   data?: T;
+  errorData?: { error: string };
 };
 
 export type LookupResult = {
@@ -460,7 +461,7 @@ export async function updateAttackFromTaxii(options: {
     return {
       status: "error",
       message: "Failed to update from TAXII.",
-      data: { error: (error as Error).message }
+      errorData: { error: (error as Error).message }
     };
   }
 }
@@ -520,7 +521,7 @@ export async function importAttackFile(options: {
     return {
       status: "error",
       message: "Failed to import STIX bundle.",
-      data: { error: (error as Error).message }
+      errorData: { error: (error as Error).message }
     };
   }
 }
