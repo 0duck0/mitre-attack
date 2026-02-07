@@ -10,7 +10,7 @@ A local MCP server that helps LLMs identify behaviors by MITRE ATT&CK technique 
 - Local CLI for testing.
 
 ## Requirements
-- Node.js 18+.
+- Node.js
 - Optional: an OpenAI‑compatible embeddings endpoint (LM Studio works).
 
 ## Quick Start
