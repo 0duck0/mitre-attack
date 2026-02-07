@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p .",
+    "cli": "node dist/cli.js",
     "start": "node dist/index.js",
     "dev": "node --watch dist/index.js"
   },
