@@ -51,6 +51,11 @@ ATTACK_MCP_CONFIG=/absolute/path/to/mitre_attack/config/attack-mcp.json
 ```
 4. Save and connect.
 
+## Using with LM Studio (Example Prompt)
+```
+Annotate this report with MITRE ATT&CK technique IDs. Use the MCP tools to lookup matches. Return inline tags and a summary table.
+```
+
 ## Air‑Gapped Import
 1. Download the MITRE ATT&CK STIX 2.1 bundle on a connected system.
 2. Transfer the file to the air‑gapped machine.
