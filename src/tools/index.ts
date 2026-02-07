@@ -1,5 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AttackStore } from "../store/attackStore.js";
 import type { AttackMcpConfig } from "../config.js";
@@ -246,10 +245,7 @@ export async function importAttackFile(options: {
     mkdirSync(dataDir, { recursive: true });
 
     writeFileSync(resolve(dataDir, "attack.json"), JSON.stringify({ techniques, tactics }, null, 2));
-    writeFileSync(
-      resolve(dataDir, "embeddings.json"),
-      JSON.stringify({ model: "none", vectors: {} }, null, 2)
-    );
+    writeFileSync(resolve(dataDir, "embeddings.jsonl"), JSON.stringify({ _meta: { model: "none" } }) + "\\n");
     writeFileSync(
       resolve(dataDir, "meta.json"),
       JSON.stringify(

@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import { loadConfig } from "./config.js";
 import { AttackStore } from "./store/attackStore.js";
+import { loadEmbeddings } from "./store/embeddingsStore.js";
 import type { JsonRpcRequest, JsonRpcResponse, McpTool, McpToolCall, McpToolResult } from "./mcp/protocol.js";
 import {
   lookupAttackId,
@@ -10,13 +11,22 @@ import {
   updateAttackFromTaxii,
   importAttackFile
 } from "./tools/index.js";
+import { createEmbeddingProvider } from "./matching/provider.js";
 
 const config = loadConfig(process.env.ATTACK_MCP_CONFIG);
 const store = new AttackStore(config.dataDir);
 store.load();
 
-const embeddings = new Map<string, number[]>();
-const embeddingProvider = undefined;
+const embeddings = loadEmbeddings(config.dataDir).vectors;
+const embeddingProvider = createEmbeddingProvider(config);
+
+function refreshEmbeddings(): void {
+  const latest = loadEmbeddings(config.dataDir).vectors;
+  embeddings.clear();
+  for (const [id, vector] of latest.entries()) {
+    embeddings.set(id, vector);
+  }
+}
 
 const tools: McpTool[] = [
   {
@@ -133,6 +143,7 @@ async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
         });
         if (result.status === "ok") {
           store.load();
+          refreshEmbeddings();
         }
         return asToolResult(result);
       }
