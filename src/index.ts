@@ -126,7 +126,16 @@ async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
     case "update_attack_from_taxii":
       return asToolResult(await updateAttackFromTaxii());
     case "import_attack_file":
-      return asToolResult(await importAttackFile(String(call.arguments?.path ?? "")));
+      {
+        const result = await importAttackFile({
+          path: String(call.arguments?.path ?? ""),
+          dataDir: config.dataDir
+        });
+        if (result.status === "ok") {
+          store.load();
+        }
+        return asToolResult(result);
+      }
     case "annotate_report":
       return asToolResult(
         await annotateReport({

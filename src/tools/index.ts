@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { AttackStore } from "../store/attackStore.js";
 import type { AttackMcpConfig } from "../config.js";
 import type { EmbeddingProvider } from "../matching/embeddings.js";
@@ -22,6 +25,19 @@ export type AnnotatedChunk = {
   startOffset: number;
   endOffset: number;
   matches: LookupResult[];
+};
+
+type StixObject = {
+  type?: string;
+  id?: string;
+  name?: string;
+  description?: string;
+  external_references?: Array<{ source_name?: string; external_id?: string; url?: string }>;
+  kill_chain_phases?: Array<{ kill_chain_name?: string; phase_name?: string }>;
+  x_mitre_aliases?: string[];
+  x_mitre_platforms?: string[];
+  x_mitre_detection?: string;
+  x_mitre_version?: string;
 };
 
 export async function lookupAttackId(options: {
@@ -174,9 +190,87 @@ export async function updateAttackFromTaxii(): Promise<ToolResponse<null>> {
   };
 }
 
-export async function importAttackFile(path?: string): Promise<ToolResponse<null>> {
-  return {
-    status: "error",
-    message: `Not implemented: import from file${path ? ` (${path})` : ""}.`
-  };
+export async function importAttackFile(options: {
+  path?: string;
+  dataDir: string;
+}): Promise<ToolResponse<null>> {
+  if (!options.path) {
+    return { status: "error", message: "Missing required path." };
+  }
+
+  try {
+    const raw = readFileSync(options.path, "utf8");
+    const parsed = JSON.parse(raw) as { objects?: StixObject[] };
+
+    const objects = parsed.objects ?? [];
+    const techniques = objects
+      .filter((obj) => obj.type === "attack-pattern")
+      .map((obj) => {
+        const externalId =
+          obj.external_references?.find((ref) => ref.source_name === "mitre-attack")?.external_id ??
+          obj.external_references?.find((ref) => ref.external_id)?.external_id ??
+          obj.id ??
+          "unknown";
+
+        const tactics = (obj.kill_chain_phases ?? [])
+          .filter((phase) => phase.kill_chain_name?.includes("mitre"))
+          .map((phase) => phase.phase_name ?? "")
+          .filter(Boolean);
+
+        const references = (obj.external_references ?? [])
+          .map((ref) => ref.url)
+          .filter((url): url is string => Boolean(url));
+
+        return {
+          id: externalId,
+          name: obj.name ?? "unknown",
+          description: obj.description ?? "",
+          tactics,
+          platforms: obj.x_mitre_platforms ?? [],
+          detection: obj.x_mitre_detection ?? "",
+          references,
+          aliases: obj.x_mitre_aliases ?? []
+        };
+      });
+
+    const tactics = Array.from(
+      new Set(
+        objects
+          .filter((obj) => obj.type === "x-mitre-tactic")
+          .map((obj) => obj.name ?? "")
+          .filter(Boolean)
+      )
+    );
+
+    const dataDir = resolve(process.cwd(), options.dataDir);
+    mkdirSync(dataDir, { recursive: true });
+
+    writeFileSync(resolve(dataDir, "attack.json"), JSON.stringify({ techniques, tactics }, null, 2));
+    writeFileSync(
+      resolve(dataDir, "embeddings.json"),
+      JSON.stringify({ model: "none", vectors: {} }, null, 2)
+    );
+    writeFileSync(
+      resolve(dataDir, "meta.json"),
+      JSON.stringify(
+        {
+          source: options.path,
+          importedAt: new Date().toISOString(),
+          version:
+            objects.find((obj) => obj.x_mitre_version)?.x_mitre_version ??
+            "unknown"
+        },
+        null,
+        2
+      )
+    );
+
+    return { status: "ok", message: `Imported ${techniques.length} techniques.` };
+  } catch (error) {
+    return {
+      status: "error",
+      message: "Failed to import STIX bundle.",
+      data: { error: (error as Error).message }
+    };
+  }
 }
