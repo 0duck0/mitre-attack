@@ -58,11 +58,12 @@ ATTACK_MCP_CONFIG=/absolute/path/to/mitre_attack/config/attack-mcp.json
 ```
 node dist/cli.js import --path /path/to/attack.json
 ```
-This writes `data/attack.json`, `data/embeddings.jsonl`, and `data/meta.json`.
+This writes `data/enterprise/attack.json`, `data/enterprise/embeddings.jsonl`, and `data/enterprise/meta.json`.
 
 ## Online Update (TAXII)
 ```
 node dist/cli.js update --domain enterprise
+node dist/cli.js update --domains enterprise,mobile,ics
 ```
 Domains: `enterprise` (default), `mobile`, `ics`.
 
@@ -70,6 +71,7 @@ Domains: `enterprise` (default), `mobile`, `ics`.
 ```
 node dist/cli.js lookup --text "PowerShell download cradle"
 node dist/cli.js lookup --file /path/to/report.txt
+node dist/cli.js lookup --text "Credential dumping" --domains enterprise,ics
 ```
 
 ## MCP Tools
@@ -77,13 +79,13 @@ node dist/cli.js lookup --file /path/to/report.txt
 - `search_attack(text, topN?)` → broader candidate search.
 - `get_attack(id)` → canonical technique data.
 - `annotate_report(text, topN?)` → chunk and annotate a report.
-- `update_attack_from_taxii(domain?)` → download latest ATT&CK STIX.
-- `import_attack_file(path)` → ingest local STIX/JSON.
+- `update_attack_from_taxii(domain?, domains?)` → download latest ATT&CK STIX.
+- `import_attack_file(path, domain?)` → ingest local STIX/JSON.
 
 ## Data Layout
-- `data/attack.json` – normalized techniques and tactics.
-- `data/embeddings.jsonl` – line‑delimited embedding vectors.
-- `data/meta.json` – source, version, timestamps.
+- `data/<domain>/attack.json` – normalized techniques and tactics.
+- `data/<domain>/embeddings.jsonl` – line‑delimited embedding vectors.
+- `data/<domain>/meta.json` – source, version, timestamps.
 
 ## Notes
 - If no embedding endpoint is configured, the MCP falls back to rule‑only matching.

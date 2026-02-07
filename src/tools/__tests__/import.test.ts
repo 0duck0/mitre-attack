@@ -42,7 +42,7 @@ test("importAttackFile normalizes STIX 2.1 bundle", async () => {
 
   assert.equal(result.status, "warning");
 
-  const attackRaw = readFileSync(join(tempDir, "attack.json"), "utf8");
+  const attackRaw = readFileSync(join(tempDir, "enterprise", "attack.json"), "utf8");
   const attackData = JSON.parse(attackRaw) as { techniques: Array<{ id: string }>; tactics: string[] };
 
   assert.equal(attackData.techniques[0].id, "T1059");

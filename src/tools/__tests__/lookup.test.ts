@@ -29,9 +29,11 @@ test("lookupAttackId returns matches from rule prefilter", async () => {
     tactics: ["Execution"]
   };
 
-  writeFileSync(join(tempDir, "attack.json"), JSON.stringify(data, null, 2));
+  const dataDir = join(tempDir, "enterprise");
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(join(dataDir, "attack.json"), JSON.stringify(data, null, 2));
 
-  const store = new AttackStore(tempDir);
+  const store = new AttackStore(dataDir);
   store.load();
 
   const config = loadConfig(undefined);

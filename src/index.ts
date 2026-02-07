@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { resolve as resolvePath } from "node:path";
 import { loadConfig } from "./config.js";
 import { AttackStore } from "./store/attackStore.js";
 import { loadEmbeddings } from "./store/embeddingsStore.js";
@@ -14,18 +15,54 @@ import {
 import { createEmbeddingProvider } from "./matching/provider.js";
 
 const config = loadConfig(process.env.ATTACK_MCP_CONFIG);
-const store = new AttackStore(config.dataDir);
-store.load();
+type Domain = "enterprise" | "mobile" | "ics";
 
-const embeddings = loadEmbeddings(config.dataDir).vectors;
 const embeddingProvider = createEmbeddingProvider(config);
 
-function refreshEmbeddings(): void {
-  const latest = loadEmbeddings(config.dataDir).vectors;
-  embeddings.clear();
+const domainState = new Map<Domain, { store: AttackStore; embeddings: Map<string, number[]> }>();
+
+function resolveDomainDataDir(domain: Domain): string {
+  return resolvePath(config.dataDir, domain);
+}
+
+function ensureDomainState(domain: Domain): { store: AttackStore; embeddings: Map<string, number[]> } {
+  const existing = domainState.get(domain);
+  if (existing) return existing;
+
+  const dataDir = resolveDomainDataDir(domain);
+  const store = new AttackStore(dataDir);
+  store.load();
+  const embeddings = loadEmbeddings(dataDir).vectors;
+
+  const state = { store, embeddings };
+  domainState.set(domain, state);
+  return state;
+}
+
+function refreshDomain(domain: Domain): void {
+  const state = ensureDomainState(domain);
+  state.store.load();
+  const latest = loadEmbeddings(resolveDomainDataDir(domain)).vectors;
+  state.embeddings.clear();
   for (const [id, vector] of latest.entries()) {
-    embeddings.set(id, vector);
+    state.embeddings.set(id, vector);
   }
+}
+
+function parseDomains(args?: Record<string, unknown>): Domain[] {
+  const single = args?.domain;
+  const multiple = args?.domains;
+  const valid: Domain[] = ["enterprise", "mobile", "ics"];
+
+  if (Array.isArray(multiple)) {
+    return multiple.filter((item): item is Domain => typeof item === "string" && valid.includes(item as Domain));
+  }
+
+  if (typeof single === "string" && valid.includes(single as Domain)) {
+    return [single as Domain];
+  }
+
+  return ["enterprise"];
 }
 
 const tools: McpTool[] = [
@@ -36,7 +73,12 @@ const tools: McpTool[] = [
       type: "object",
       properties: {
         text: { type: "string" },
-        topN: { type: "number" }
+        topN: { type: "number" },
+        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] },
+        domains: {
+          type: "array",
+          items: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+        }
       },
       required: ["text"]
     }
@@ -48,7 +90,12 @@ const tools: McpTool[] = [
       type: "object",
       properties: {
         text: { type: "string" },
-        topN: { type: "number" }
+        topN: { type: "number" },
+        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] },
+        domains: {
+          type: "array",
+          items: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+        }
       },
       required: ["text"]
     }
@@ -59,7 +106,12 @@ const tools: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string" }
+        id: { type: "string" },
+        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] },
+        domains: {
+          type: "array",
+          items: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+        }
       },
       required: ["id"]
     }
@@ -70,7 +122,11 @@ const tools: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] },
+        domains: {
+          type: "array",
+          items: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+        }
       }
     }
   },
@@ -80,7 +136,8 @@ const tools: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        path: { type: "string" }
+        path: { type: "string" },
+        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] }
       },
       required: ["path"]
     }
@@ -92,7 +149,12 @@ const tools: McpTool[] = [
       type: "object",
       properties: {
         text: { type: "string" },
-        topN: { type: "number" }
+        topN: { type: "number" },
+        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] },
+        domains: {
+          type: "array",
+          items: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+        }
       },
       required: ["text"]
     }
@@ -109,45 +171,121 @@ function asToolResult(payload: unknown): McpToolResult {
 
 async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
   const topN = typeof call.arguments?.topN === "number" ? call.arguments.topN : config.topNDefault;
+  const domains = parseDomains(call.arguments);
 
   switch (call.name) {
     case "lookup_attack_id":
-      return asToolResult(
-        await lookupAttackId({
-          text: String(call.arguments?.text ?? ""),
-          topN,
-          store,
-          embeddings,
-          embeddingProvider,
-          config
-        })
-      );
+      {
+        const text = String(call.arguments?.text ?? "");
+        const results: Array<Awaited<ReturnType<typeof lookupAttackId>>> = [];
+
+        for (const domain of domains) {
+          const state = ensureDomainState(domain);
+          results.push(
+            await lookupAttackId({
+              text,
+              topN,
+              store: state.store,
+              embeddings: state.embeddings,
+              embeddingProvider,
+              config,
+              domain
+            })
+          );
+        }
+
+        const merged = results.flatMap((res) => res.data ?? []);
+        merged.sort((a, b) => b.confidence - a.confidence);
+        const data = merged.slice(0, topN);
+
+        return asToolResult({
+          status: results.some((res) => res.status === "warning") ? "warning" : "ok",
+          message: data.length ? "ok" : "No matches above threshold.",
+          data
+        });
+      }
     case "search_attack":
-      return asToolResult(
-        await searchAttack({
-          text: String(call.arguments?.text ?? ""),
-          topN,
-          store,
-          embeddings,
-          embeddingProvider,
-          config
-        })
-      );
+      {
+        const text = String(call.arguments?.text ?? "");
+        const results: Array<Awaited<ReturnType<typeof searchAttack>>> = [];
+
+        for (const domain of domains) {
+          const state = ensureDomainState(domain);
+          results.push(
+            await searchAttack({
+              text,
+              topN,
+              store: state.store,
+              embeddings: state.embeddings,
+              embeddingProvider,
+              config,
+              domain
+            })
+          );
+        }
+
+        const merged = results.flatMap((res) => res.data ?? []);
+        merged.sort((a, b) => b.confidence - a.confidence);
+        const data = merged.slice(0, topN);
+
+        return asToolResult({
+          status: results.some((res) => res.status === "warning") ? "warning" : "ok",
+          message: data.length ? "ok" : "No matches above threshold.",
+          data
+        });
+      }
     case "get_attack":
-      return asToolResult(getAttack({ id: String(call.arguments?.id ?? ""), store }));
+      {
+        const id = String(call.arguments?.id ?? "");
+        const matches: Array<{ domain: Domain; result: ReturnType<typeof getAttack> }> = [];
+
+        for (const domain of domains) {
+          const state = ensureDomainState(domain);
+          const result = getAttack({ id, store: state.store });
+          if (result.status === "ok") {
+            matches.push({ domain, result });
+          }
+        }
+
+        if (matches.length === 0) {
+          return asToolResult({ status: "error", message: `Technique not found: ${id}` });
+        }
+
+        if (matches.length > 1) {
+          return asToolResult({
+            status: "warning",
+            message: `Technique found in multiple domains: ${matches.map((m) => m.domain).join(", ")}`,
+            data: matches.map((match) => ({ domain: match.domain, ...match.result.data }))
+          });
+        }
+
+        return asToolResult({ status: "ok", message: "ok", data: matches[0].result.data });
+      }
     case "update_attack_from_taxii":
       {
-        const result = await updateAttackFromTaxii({
-          dataDir: config.dataDir,
-          embeddingProvider,
-          embeddingModel: config.embeddingModel,
-          domain: call.arguments?.domain as "enterprise" | "mobile" | "ics" | undefined
-        });
-        if (result.status === "ok" || result.status === "warning") {
-          store.load();
-          refreshEmbeddings();
+        const results: Array<{ domain: Domain; result: Awaited<ReturnType<typeof updateAttackFromTaxii>> }> = [];
+        for (const domain of domains) {
+          const result = await updateAttackFromTaxii({
+            dataDir: config.dataDir,
+            embeddingProvider,
+            embeddingModel: config.embeddingModel,
+            domain
+          });
+          results.push({ domain, result });
+          if (result.status === "ok" || result.status === "warning") {
+            refreshDomain(domain);
+          }
         }
-        return asToolResult(result);
+
+        if (results.length === 1) {
+          return asToolResult(results[0].result);
+        }
+
+        return asToolResult({
+          status: results.some((item) => item.result.status === "warning") ? "warning" : "ok",
+          message: "Update completed.",
+          data: results.map((item) => ({ domain: item.domain, ...item.result }))
+        });
       }
     case "import_attack_file":
       {
@@ -155,25 +293,61 @@ async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
           path: String(call.arguments?.path ?? ""),
           dataDir: config.dataDir,
           embeddingProvider,
-          embeddingModel: config.embeddingModel
+          embeddingModel: config.embeddingModel,
+          domain: call.arguments?.domain as "enterprise" | "mobile" | "ics" | undefined
         });
         if (result.status === "ok") {
-          store.load();
-          refreshEmbeddings();
+          const domain = (call.arguments?.domain as Domain | undefined) ?? "enterprise";
+          refreshDomain(domain);
         }
         return asToolResult(result);
       }
     case "annotate_report":
-      return asToolResult(
-        await annotateReport({
-          text: String(call.arguments?.text ?? ""),
-          topN,
-          store,
-          embeddings,
-          embeddingProvider,
-          config
-        })
-      );
+      {
+        const text = String(call.arguments?.text ?? "");
+        const results: Array<Awaited<ReturnType<typeof annotateReport>>> = [];
+
+        for (const domain of domains) {
+          const state = ensureDomainState(domain);
+          results.push(
+            await annotateReport({
+              text,
+              topN,
+              store: state.store,
+              embeddings: state.embeddings,
+              embeddingProvider,
+              config,
+              domain
+            })
+          );
+        }
+
+        if (results.length === 1) {
+          return asToolResult(results[0]);
+        }
+
+        const merged = results.reduce((acc, current) => {
+          const chunks = current.data ?? [];
+          chunks.forEach((chunk, index) => {
+            const target = acc[index];
+            if (!target) {
+              acc[index] = { ...chunk };
+              return;
+            }
+
+            const mergedMatches = [...target.matches, ...chunk.matches];
+            mergedMatches.sort((a, b) => b.confidence - a.confidence);
+            target.matches = mergedMatches.slice(0, topN);
+          });
+          return acc;
+        }, [] as Array<{ chunk: string; startOffset: number; endOffset: number; matches: any[] }>);
+
+        return asToolResult({
+          status: "ok",
+          message: "ok",
+          data: merged
+        });
+      }
     default:
       return asToolResult({ status: "error", message: `Unknown tool: ${call.name}` });
   }

@@ -14,6 +14,7 @@ export type ToolResponse<T> = {
 
 export type LookupResult = {
   id: string;
+  domain?: string;
   confidence: number;
   ruleScore: number;
   embeddingScore: number;
@@ -177,8 +178,9 @@ export async function lookupAttackId(options: {
   embeddings: Map<string, number[]>;
   embeddingProvider?: EmbeddingProvider;
   config: AttackMcpConfig;
+  domain?: string;
 }): Promise<ToolResponse<LookupResult[]>> {
-  const { text, topN, store, embeddings, embeddingProvider, config } = options;
+  const { text, topN, store, embeddings, embeddingProvider, config, domain } = options;
   const data = store.getData();
 
   if (data.techniques.length === 0) {
@@ -202,6 +204,7 @@ export async function lookupAttackId(options: {
     .filter((match) => match.score >= config.confidenceThreshold)
     .map((match) => ({
       id: match.id,
+      domain,
       confidence: match.score,
       ruleScore: match.ruleScore,
       embeddingScore: match.embeddingScore,
@@ -222,6 +225,7 @@ export async function searchAttack(options: {
   embeddings: Map<string, number[]>;
   embeddingProvider?: EmbeddingProvider;
   config: AttackMcpConfig;
+  domain?: string;
 }): Promise<ToolResponse<LookupResult[]>> {
   return lookupAttackId(options);
 }
@@ -282,8 +286,9 @@ export async function annotateReport(options: {
   embeddings: Map<string, number[]>;
   embeddingProvider?: EmbeddingProvider;
   config: AttackMcpConfig;
+  domain?: string;
 }): Promise<ToolResponse<AnnotatedChunk[]>> {
-  const { text, topN, store, embeddings, embeddingProvider, config } = options;
+  const { text, topN, store, embeddings, embeddingProvider, config, domain } = options;
 
   const chunks = chunkText(text, config.maxChunkSize);
   const annotations: AnnotatedChunk[] = [];
@@ -295,7 +300,8 @@ export async function annotateReport(options: {
       store,
       embeddings,
       embeddingProvider,
-      config
+      config,
+      domain
     });
 
     annotations.push({
@@ -414,7 +420,7 @@ export async function updateAttackFromTaxii(options: {
     const objects = await fetchCollectionObjects(apiRoot, collectionId);
 
     const normalized = normalizeStixObjects(objects);
-    const dataDir = resolve(process.cwd(), options.dataDir);
+    const dataDir = resolve(process.cwd(), options.dataDir, domain);
     mkdirSync(dataDir, { recursive: true });
 
     writeFileSync(
@@ -464,6 +470,7 @@ export async function importAttackFile(options: {
   dataDir: string;
   embeddingProvider?: EmbeddingProvider;
   embeddingModel: string;
+  domain?: "enterprise" | "mobile" | "ics";
 }): Promise<ToolResponse<null>> {
   if (!options.path) {
     return { status: "error", message: "Missing required path." };
@@ -476,7 +483,8 @@ export async function importAttackFile(options: {
     const objects = parsed.objects ?? [];
     const normalized = normalizeStixObjects(objects);
 
-    const dataDir = resolve(process.cwd(), options.dataDir);
+    const domain = options.domain ?? "enterprise";
+    const dataDir = resolve(process.cwd(), options.dataDir, domain);
     mkdirSync(dataDir, { recursive: true });
 
     writeFileSync(
@@ -494,6 +502,7 @@ export async function importAttackFile(options: {
       JSON.stringify(
         {
           source: options.path,
+          domain,
           importedAt: new Date().toISOString(),
           version: normalized.version ?? "unknown"
         },
