@@ -4,6 +4,7 @@ import type { AttackStore } from "../store/attackStore.js";
 import type { AttackMcpConfig } from "../config.js";
 import type { EmbeddingProvider } from "../matching/embeddings.js";
 import { hybridMatch } from "../matching/hybrid.js";
+import { saveEmbeddings } from "../store/embeddingsStore.js";
 
 export type ToolResponse<T> = {
   status: "ok" | "warning" | "error";
@@ -25,6 +26,75 @@ export type AnnotatedChunk = {
   endOffset: number;
   matches: LookupResult[];
 };
+
+function buildTechniqueText(technique: {
+  name: string;
+  description: string;
+  tactics: string[];
+  aliases?: string[];
+  examples?: string[];
+}): string {
+  return [
+    technique.name,
+    technique.description,
+    technique.tactics.join(", "),
+    ...(technique.aliases ?? []),
+    ...(technique.examples ?? [])
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function rebuildEmbeddings(options: {
+  techniques: Array<{
+    id: string;
+    name: string;
+    description: string;
+    tactics: string[];
+    aliases?: string[];
+    examples?: string[];
+  }>;
+  embeddingProvider?: EmbeddingProvider;
+  dataDir: string;
+  modelName: string;
+}): Promise<{ status: "ok" | "warning"; message: string }> {
+  if (!options.embeddingProvider) {
+    saveEmbeddings({
+      dataDir: options.dataDir,
+      vectors: new Map(),
+      meta: { model: "none", createdAt: new Date().toISOString() }
+    });
+    return { status: "warning", message: "No embedding endpoint configured. Skipped embedding rebuild." };
+  }
+
+  const vectors = new Map<string, number[]>();
+  let dimensions: number | undefined;
+
+  for (const technique of options.techniques) {
+    const text = buildTechniqueText(technique);
+    try {
+      const vector = await options.embeddingProvider.embed(text);
+      if (!dimensions) {
+        dimensions = vector.length;
+      }
+      vectors.set(technique.id, vector);
+    } catch {
+      // Skip failed embeddings; keep partial progress.
+    }
+  }
+
+  saveEmbeddings({
+    dataDir: options.dataDir,
+    vectors,
+    meta: {
+      model: options.modelName,
+      dimensions,
+      createdAt: new Date().toISOString()
+    }
+  });
+
+  return { status: "ok", message: `Embedded ${vectors.size} techniques.` };
+}
 
 type StixObject = {
   type?: string;
@@ -192,6 +262,8 @@ export async function updateAttackFromTaxii(): Promise<ToolResponse<null>> {
 export async function importAttackFile(options: {
   path?: string;
   dataDir: string;
+  embeddingProvider?: EmbeddingProvider;
+  embeddingModel: string;
 }): Promise<ToolResponse<null>> {
   if (!options.path) {
     return { status: "error", message: "Missing required path." };
@@ -245,7 +317,12 @@ export async function importAttackFile(options: {
     mkdirSync(dataDir, { recursive: true });
 
     writeFileSync(resolve(dataDir, "attack.json"), JSON.stringify({ techniques, tactics }, null, 2));
-    writeFileSync(resolve(dataDir, "embeddings.jsonl"), JSON.stringify({ _meta: { model: "none" } }) + "\\n");
+    const embedResult = await rebuildEmbeddings({
+      techniques,
+      embeddingProvider: options.embeddingProvider,
+      dataDir,
+      modelName: options.embeddingModel
+    });
     writeFileSync(
       resolve(dataDir, "meta.json"),
       JSON.stringify(
@@ -261,7 +338,11 @@ export async function importAttackFile(options: {
       )
     );
 
-    return { status: "ok", message: `Imported ${techniques.length} techniques.` };
+    const status = embedResult.status === "warning" ? "warning" : "ok";
+    return {
+      status,
+      message: `Imported ${techniques.length} techniques. ${embedResult.message}`
+    };
   } catch (error) {
     return {
       status: "error",

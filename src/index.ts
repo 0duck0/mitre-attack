@@ -139,7 +139,9 @@ async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
       {
         const result = await importAttackFile({
           path: String(call.arguments?.path ?? ""),
-          dataDir: config.dataDir
+          dataDir: config.dataDir,
+          embeddingProvider,
+          embeddingModel: config.embeddingModel
         });
         if (result.status === "ok") {
           store.load();
