@@ -1,0 +1,10 @@
+{
+  "dataDir": "./data",
+  "embeddingModel": "bge-small-en",
+  "embeddingEndpoint": "",
+  "topNDefault": 5,
+  "confidenceThreshold": 0.35,
+  "ruleWeight": 0.35,
+  "embeddingWeight": 0.65,
+  "maxChunkSize": 1200
+}
