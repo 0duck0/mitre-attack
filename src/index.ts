@@ -69,7 +69,9 @@ const tools: McpTool[] = [
     description: "Download the latest ATT&CK release from TAXII and rebuild data.",
     inputSchema: {
       type: "object",
-      properties: {}
+      properties: {
+        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+      }
     }
   },
   {
@@ -134,7 +136,19 @@ async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
     case "get_attack":
       return asToolResult(getAttack({ id: String(call.arguments?.id ?? ""), store }));
     case "update_attack_from_taxii":
-      return asToolResult(await updateAttackFromTaxii());
+      {
+        const result = await updateAttackFromTaxii({
+          dataDir: config.dataDir,
+          embeddingProvider,
+          embeddingModel: config.embeddingModel,
+          domain: call.arguments?.domain as "enterprise" | "mobile" | "ics" | undefined
+        });
+        if (result.status === "ok" || result.status === "warning") {
+          store.load();
+          refreshEmbeddings();
+        }
+        return asToolResult(result);
+      }
     case "import_attack_file":
       {
         const result = await importAttackFile({

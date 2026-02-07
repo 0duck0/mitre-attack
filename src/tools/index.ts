@@ -109,6 +109,67 @@ type StixObject = {
   x_mitre_version?: string;
 };
 
+type NormalizedAttackData = {
+  techniques: Array<{
+    id: string;
+    name: string;
+    description: string;
+    tactics: string[];
+    platforms?: string[];
+    detection?: string;
+    references?: string[];
+    aliases?: string[];
+    examples?: string[];
+  }>;
+  tactics: string[];
+  version?: string;
+};
+
+function normalizeStixObjects(objects: StixObject[]): NormalizedAttackData {
+  const techniques = objects
+    .filter((obj) => obj.type === "attack-pattern")
+    .map((obj) => {
+      const externalId =
+        obj.external_references?.find((ref) => ref.source_name === "mitre-attack")?.external_id ??
+        obj.external_references?.find((ref) => ref.external_id)?.external_id ??
+        obj.id ??
+        "unknown";
+
+      const tactics = (obj.kill_chain_phases ?? [])
+        .filter((phase) => phase.kill_chain_name?.includes("mitre"))
+        .map((phase) => phase.phase_name ?? "")
+        .filter(Boolean);
+
+      const references = (obj.external_references ?? [])
+        .map((ref) => ref.url)
+        .filter((url): url is string => Boolean(url));
+
+      return {
+        id: externalId,
+        name: obj.name ?? "unknown",
+        description: obj.description ?? "",
+        tactics,
+        platforms: obj.x_mitre_platforms ?? [],
+        detection: obj.x_mitre_detection ?? "",
+        references,
+        aliases: obj.x_mitre_aliases ?? []
+      };
+    });
+
+  const tactics = Array.from(
+    new Set(
+      objects
+        .filter((obj) => obj.type === "x-mitre-tactic")
+        .map((obj) => obj.name ?? "")
+        .filter(Boolean)
+    )
+  );
+
+  const version = objects.find((obj) => obj.x_mitre_version)?.x_mitre_version;
+
+  return { techniques, tactics, version };
+}
+
 export async function lookupAttackId(options: {
   text: string;
   topN: number;
@@ -252,11 +313,150 @@ export async function annotateReport(options: {
   };
 }
 
-export async function updateAttackFromTaxii(): Promise<ToolResponse<null>> {
-  return {
-    status: "error",
-    message: "Not implemented: update from TAXII."
+const TAXII_BASE_URL = "https://attack-taxii.mitre.org/";
+
+async function taxiiGet(url: string): Promise<unknown> {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { Accept: "application/taxii+json;version=2.1" }
+  });
+
+  if (!response.ok) {
+    throw new Error(`TAXII request failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+function ensureTrailingSlash(url: string): string {
+  return url.endsWith("/") ? url : `${url}/`;
+}
+
+async function discoverApiRoot(baseUrl: string): Promise<string> {
+  const discoveryUrl = new URL("taxii2/", ensureTrailingSlash(baseUrl)).toString();
+  const discovery = (await taxiiGet(discoveryUrl)) as {
+    api_roots?: string[];
+    default?: string;
   };
+
+  const root = discovery.default ?? discovery.api_roots?.[0];
+  if (!root) {
+    throw new Error("No TAXII API roots discovered.");
+  }
+
+  return new URL(ensureTrailingSlash(root), ensureTrailingSlash(baseUrl)).toString();
+}
+
+async function findCollectionId(apiRoot: string, domain: "enterprise" | "mobile" | "ics"): Promise<string> {
+  const collectionsUrl = new URL("collections/", ensureTrailingSlash(apiRoot)).toString();
+  const payload = (await taxiiGet(collectionsUrl)) as {
+    collections?: Array<{ id?: string; title?: string }>;
+  };
+
+  const titleMap: Record<"enterprise" | "mobile" | "ics", string> = {
+    enterprise: "Enterprise ATT&CK",
+    mobile: "Mobile ATT&CK",
+    ics: "ICS ATT&CK"
+  };
+
+  const title = titleMap[domain];
+  const collection = payload.collections?.find((item) => item.title?.includes(title));
+  if (collection?.id) {
+    return collection.id;
+  }
+
+  if (domain === "enterprise") {
+    return "x-mitre-collection--1f5f1533-f617-4ca8-9ab4-6a02367fa019";
+  }
+
+  throw new Error(`No collection found for ${domain}.`);
+}
+
+async function fetchCollectionObjects(apiRoot: string, collectionId: string): Promise<StixObject[]> {
+  const objects: StixObject[] = [];
+  const baseUrl = new URL(`collections/${collectionId}/objects/`, ensureTrailingSlash(apiRoot));
+  baseUrl.searchParams.set("limit", "1000");
+
+  let next: string | undefined;
+  let more = true;
+
+  while (more) {
+    const url = new URL(baseUrl.toString());
+    if (next) {
+      url.searchParams.set("next", next);
+    }
+
+    const payload = (await taxiiGet(url.toString())) as {
+      objects?: StixObject[];
+      more?: boolean;
+      next?: string;
+    };
+
+    objects.push(...(payload.objects ?? []));
+    more = Boolean(payload.more);
+    next = payload.next;
+    if (!more) break;
+  }
+
+  return objects;
+}
+
+export async function updateAttackFromTaxii(options: {
+  dataDir: string;
+  embeddingProvider?: EmbeddingProvider;
+  embeddingModel: string;
+  domain?: "enterprise" | "mobile" | "ics";
+}): Promise<ToolResponse<null>> {
+  try {
+    const domain = options.domain ?? "enterprise";
+    const apiRoot = await discoverApiRoot(TAXII_BASE_URL);
+    const collectionId = await findCollectionId(apiRoot, domain);
+    const objects = await fetchCollectionObjects(apiRoot, collectionId);
+
+    const normalized = normalizeStixObjects(objects);
+    const dataDir = resolve(process.cwd(), options.dataDir);
+    mkdirSync(dataDir, { recursive: true });
+
+    writeFileSync(
+      resolve(dataDir, "attack.json"),
+      JSON.stringify({ techniques: normalized.techniques, tactics: normalized.tactics }, null, 2)
+    );
+
+    const embedResult = await rebuildEmbeddings({
+      techniques: normalized.techniques,
+      embeddingProvider: options.embeddingProvider,
+      dataDir,
+      modelName: options.embeddingModel
+    });
+
+    writeFileSync(
+      resolve(dataDir, "meta.json"),
+      JSON.stringify(
+        {
+          source: TAXII_BASE_URL,
+          apiRoot,
+          collectionId,
+          domain,
+          importedAt: new Date().toISOString(),
+          version: normalized.version ?? "unknown"
+        },
+        null,
+        2
+      )
+    );
+
+    const status = embedResult.status === "warning" ? "warning" : "ok";
+    return {
+      status,
+      message: `Updated ${normalized.techniques.length} techniques from TAXII. ${embedResult.message}`
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: "Failed to update from TAXII.",
+      data: { error: (error as Error).message }
+    };
+  }
 }
 
 export async function importAttackFile(options: {
@@ -274,51 +474,17 @@ export async function importAttackFile(options: {
     const parsed = JSON.parse(raw) as { objects?: StixObject[] };
 
     const objects = parsed.objects ?? [];
-    const techniques = objects
-      .filter((obj) => obj.type === "attack-pattern")
-      .map((obj) => {
-        const externalId =
-          obj.external_references?.find((ref) => ref.source_name === "mitre-attack")?.external_id ??
-          obj.external_references?.find((ref) => ref.external_id)?.external_id ??
-          obj.id ??
-          "unknown";
-
-        const tactics = (obj.kill_chain_phases ?? [])
-          .filter((phase) => phase.kill_chain_name?.includes("mitre"))
-          .map((phase) => phase.phase_name ?? "")
-          .filter(Boolean);
-
-        const references = (obj.external_references ?? [])
-          .map((ref) => ref.url)
-          .filter((url): url is string => Boolean(url));
-
-        return {
-          id: externalId,
-          name: obj.name ?? "unknown",
-          description: obj.description ?? "",
-          tactics,
-          platforms: obj.x_mitre_platforms ?? [],
-          detection: obj.x_mitre_detection ?? "",
-          references,
-          aliases: obj.x_mitre_aliases ?? []
-        };
-      });
-
-    const tactics = Array.from(
-      new Set(
-        objects
-          .filter((obj) => obj.type === "x-mitre-tactic")
-          .map((obj) => obj.name ?? "")
-          .filter(Boolean)
-      )
-    );
+    const normalized = normalizeStixObjects(objects);
 
     const dataDir = resolve(process.cwd(), options.dataDir);
     mkdirSync(dataDir, { recursive: true });
 
-    writeFileSync(resolve(dataDir, "attack.json"), JSON.stringify({ techniques, tactics }, null, 2));
+    writeFileSync(
+      resolve(dataDir, "attack.json"),
+      JSON.stringify({ techniques: normalized.techniques, tactics: normalized.tactics }, null, 2)
+    );
     const embedResult = await rebuildEmbeddings({
-      techniques,
+      techniques: normalized.techniques,
       embeddingProvider: options.embeddingProvider,
       dataDir,
       modelName: options.embeddingModel
@@ -329,9 +495,7 @@ export async function importAttackFile(options: {
         {
           source: options.path,
           importedAt: new Date().toISOString(),
-          version:
-            objects.find((obj) => obj.x_mitre_version)?.x_mitre_version ??
-            "unknown"
+          version: normalized.version ?? "unknown"
         },
         null,
         2
@@ -341,7 +505,7 @@ export async function importAttackFile(options: {
     const status = embedResult.status === "warning" ? "warning" : "ok";
     return {
       status,
-      message: `Imported ${techniques.length} techniques. ${embedResult.message}`
+      message: `Imported ${normalized.techniques.length} techniques. ${embedResult.message}`
     };
   } catch (error) {
     return {
