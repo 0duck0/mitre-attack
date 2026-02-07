@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p .",
     "cli": "node dist/cli.js",
+    "data": "node dist/data.js",
     "start": "node dist/index.js",
     "dev": "node --watch dist/index.js",
     "test": "node --test dist/**/__tests__/*.js"

@@ -60,10 +60,21 @@ node dist/cli.js import --path /path/to/attack.json
 ```
 This writes `data/enterprise/attack.json`, `data/enterprise/embeddings.jsonl`, and `data/enterprise/meta.json`.
 
+Or via npm helper:
+```
+npm run data -- import --path /path/to/attack.json --domain enterprise
+```
+
 ## Online Update (TAXII)
 ```
 node dist/cli.js update --domain enterprise
 node dist/cli.js update --domains enterprise,mobile,ics
+```
+
+Or via npm helper:
+```
+npm run data -- update --domain enterprise
+npm run data -- update --domains enterprise,mobile,ics
 ```
 Domains: `enterprise` (default), `mobile`, `ics`.
 
