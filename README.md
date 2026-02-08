@@ -1,6 +1,6 @@
 # MITRE ATT&CK MCP
 
-A local MCP server that helps LLMs identify behaviors by MITRE ATT&CK technique ID and keeps definitions current. It runs over stdio for LM Studio and supports both online TAXII updates and air‑gapped imports.
+A local MCP server that helps LLMs identify behaviors by MITRE ATT&CK technique ID and keeps ATT&CK definitions updated to the latest version available. It runs over stdio for LM Studio and supports both online TAXII updates and air‑gapped imports.
 
 ## Features
 - Hybrid matching: rule prefilter + embedding re‑rank.
