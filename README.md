@@ -4,10 +4,10 @@ A local MCP server that helps LLMs identify behaviors by MITRE ATT&CK technique 
 
 Limited testing done using several freely available LLMs.
 Tests performed in LM Studio running on:
-Model Name:	MacBook Pro
-Chip:	Apple M4 Max
-Total Number of Cores:	16 (12 performance and 4 efficiency)
-Memory:	128 GB
+- Model Name:	MacBook Pro
+- Chip:	Apple M4 Max
+- Total Number of Cores:	16 (12 performance and 4 efficiency)
+- Memory:	128 GB
   
 Suggeste model: qwen2.5-32b-instruct Q4_K_M GGUF (able to annotate long reports accurately enough using this MCP toolset)
 
