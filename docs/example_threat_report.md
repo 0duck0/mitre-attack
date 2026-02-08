@@ -1,7 +1,8 @@
 # 2025 Global Threat Intelligence Report  
 ## Mapping Threats and Trends
 source: 
-```https://go.cyberproof.com/hubfs/CyberProof_2025_Global_Threat_Intelligence_Report.pdf
+```
+https://go.cyberproof.com/hubfs/CyberProof_2025_Global_Threat_Intelligence_Report.pdf
 ```
 ---
 
