@@ -12,7 +12,7 @@ This server gives your AI model in LM Studio the ability to look up real cyberse
 
 ## Prerequisites
 
-Before you begin, you need two things installed on your Mac:
+Before you begin, you need two things installed:
 
 ### 1. LM Studio
 
@@ -22,7 +22,7 @@ Download and install LM Studio from [lmstudio.ai](https://lmstudio.ai). This is 
 
 Node.js is what runs the MCP server. To check if you already have it:
 
-1. Open **Terminal** (press `Cmd + Space`, type "Terminal", press Enter).
+1. Open a terminal (Terminal on macOS, PowerShell on Windows, or your preferred shell on Linux).
 2. Type the following and press Enter:
    ```
    node --version
@@ -31,14 +31,14 @@ Node.js is what runs the MCP server. To check if you already have it:
 
 ---
 
-## Step 1: Open Terminal and Navigate to the Project
+## Step 1: Open a Terminal and Navigate to the Project
 
-1. Open **Terminal** (press `Cmd + Space`, type "Terminal", press Enter).
-2. Type the following command and press Enter:
+1. Open a terminal.
+2. Navigate to the directory where you cloned or downloaded this project:
    ```
-   cd /Users/timduckworth/LLM_Automation/MCP-Servers/mitre_attack
+   cd /path/to/mitre_attack
    ```
-   This tells Terminal to "go to" the project folder.
+   Replace `/path/to/mitre_attack` with the actual path on your machine.
 
 ---
 
@@ -135,39 +135,19 @@ This is where you tell LM Studio about the server.
     "mitre-attack": {
       "command": "node",
       "args": [
-        "/Users/timduckworth/LLM_Automation/MCP-Servers/mitre_attack/dist/index.js"
+        "/absolute/path/to/mitre_attack/dist/index.js"
       ],
       "env": {
-        "ATTACK_MCP_CONFIG": "/Users/timduckworth/LLM_Automation/MCP-Servers/mitre_attack/config/attack-mcp.json"
+        "ATTACK_MCP_CONFIG": "/absolute/path/to/mitre_attack/config/attack-mcp.json"
       }
     }
   }
 }
 ```
 
-> **Note:** If you already have other MCP servers configured (like `cyber-threat-hunter`), just add the `"mitre-attack"` block alongside them, separated by a comma:
->
-> ```json
-> {
->   "mcpServers": {
->     "cyber-threat-hunter": {
->       "command": "node",
->       "args": [
->         "/Users/timduckworth/LLM_Automation/cyber-threat-hunter/mcp-server/build/index.js"
->       ]
->     },
->     "mitre-attack": {
->       "command": "node",
->       "args": [
->         "/Users/timduckworth/LLM_Automation/MCP-Servers/mitre_attack/dist/index.js"
->       ],
->       "env": {
->         "ATTACK_MCP_CONFIG": "/Users/timduckworth/LLM_Automation/MCP-Servers/mitre_attack/config/attack-mcp.json"
->       }
->     }
->   }
-> }
-> ```
+> **Important:** Replace `/absolute/path/to/mitre_attack` with the actual full path to your project directory. You can find this by running `pwd` in the project folder.
+
+> **Note:** If you already have other MCP servers configured, just add the `"mitre-attack"` block alongside them inside the `"mcpServers"` object, separated by a comma.
 
 6. Save the configuration.
 7. Make sure the toggle next to `mitre-attack` is switched **on** (green). You should see a status indicator showing it's connected.
