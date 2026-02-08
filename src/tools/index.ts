@@ -494,6 +494,46 @@ export async function updateAttackFromTaxii(options: {
   }
 }
 
+export function listTechniques(options: {
+  store: AttackStore;
+  tactic?: string;
+}): ToolResponse<{ tactics: string[]; techniques: Array<{ id: string; name: string; tactics: string[] }> }> {
+  const { store, tactic } = options;
+  const data = store.getData();
+
+  if (data.techniques.length === 0) {
+    return {
+      status: "error",
+      message: "No ATT&CK data loaded. Run update or import first."
+    };
+  }
+
+  let filtered = data.techniques;
+  if (tactic) {
+    const normalizedTactic = tactic.toLowerCase().trim();
+    filtered = data.techniques.filter((t) =>
+      t.tactics.some((tacticName) => tacticName.toLowerCase() === normalizedTactic)
+    );
+
+    if (filtered.length === 0) {
+      return {
+        status: "warning",
+        message: `No techniques found for tactic "${tactic}". Available tactics: ${data.tactics.join(", ")}`,
+        data: { tactics: data.tactics, techniques: [] }
+      };
+    }
+  }
+
+  const compact = filtered.map((t) => ({ id: t.id, name: t.name, tactics: t.tactics }));
+  compact.sort((a, b) => a.id.localeCompare(b.id));
+
+  return {
+    status: "ok",
+    message: `${compact.length} techniques${tactic ? ` for tactic "${tactic}"` : ""}.`,
+    data: { tactics: data.tactics, techniques: compact }
+  };
+}
+
 export async function importAttackFile(options: {
   path?: string;
   dataDir: string;

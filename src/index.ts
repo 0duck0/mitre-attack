@@ -8,6 +8,7 @@ import {
   lookupAttackId,
   searchAttack,
   getAttack,
+  listTechniques,
   annotateReport,
   updateAttackFromTaxii,
   importAttackFile
@@ -155,6 +156,25 @@ const tools: McpTool[] = [
         domain: { type: "string", description: "ATT&CK domain: enterprise, mobile, or ics" }
       },
       required: ["path"]
+    }
+  },
+  {
+    name: "list_techniques",
+    description: "List ATT&CK technique IDs and names, optionally filtered by tactic. Use this to browse available techniques and verify your annotations against current definitions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tactic: {
+          type: "string",
+          description: "Filter by tactic name (e.g. initial-access, execution, persistence, privilege-escalation, defense-evasion, credential-access, discovery, lateral-movement, collection, command-and-control, exfiltration, impact). Omit to list all techniques."
+        },
+        domain: { type: "string", description: "ATT&CK domain: enterprise, mobile, or ics" },
+        domains: {
+          type: ["array", "string"],
+          items: { type: "string" },
+          description: "One or more ATT&CK domains: enterprise, mobile, ics"
+        }
+      }
     }
   },
   {
@@ -323,6 +343,43 @@ async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
           refreshDomain(importDomain);
         }
         return asToolResult(result);
+      }
+    case "list_techniques":
+      {
+        const tactic = call.arguments?.tactic ? String(call.arguments.tactic) : undefined;
+        const results: Array<ReturnType<typeof listTechniques>> = [];
+
+        for (const domain of domains) {
+          const state = ensureDomainState(domain);
+          results.push(listTechniques({ store: state.store, tactic }));
+        }
+
+        if (results.length === 1) {
+          return asToolResult(results[0]);
+        }
+
+        // Merge multi-domain results, dedup by technique ID
+        const seen = new Set<string>();
+        const allTechniques: Array<{ id: string; name: string; tactics: string[] }> = [];
+        const allTactics = new Set<string>();
+
+        for (const res of results) {
+          for (const tac of res.data?.tactics ?? []) allTactics.add(tac);
+          for (const tech of res.data?.techniques ?? []) {
+            if (!seen.has(tech.id)) {
+              seen.add(tech.id);
+              allTechniques.push(tech);
+            }
+          }
+        }
+
+        allTechniques.sort((a, b) => a.id.localeCompare(b.id));
+
+        return asToolResult({
+          status: "ok",
+          message: `${allTechniques.length} techniques${tactic ? ` for tactic "${tactic}"` : ""}.`,
+          data: { tactics: Array.from(allTactics), techniques: allTechniques }
+        });
       }
     case "annotate_report":
       {
