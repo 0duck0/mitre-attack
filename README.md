@@ -9,7 +9,7 @@ Tests performed in LM Studio running on:
 - Total Number of Cores:	16 (12 performance and 4 efficiency)
 - Memory:	128 GB
   
-Suggeste model: qwen2.5-32b-instruct Q4_K_M GGUF (able to annotate long reports accurately enough using this MCP toolset)
+Suggested model: qwen2.5-32b-instruct Q4_K_M GGUF (able to annotate long reports accurately enough using this MCP toolset)
 
 Other LLMs I tested that did NOT generate accurate enough results:
 - qwen2.5-7b-instruct-1m Q4_K_M GGUF
