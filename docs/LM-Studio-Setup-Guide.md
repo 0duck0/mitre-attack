@@ -165,25 +165,27 @@ A system prompt tells the AI model how to behave and when to use the MCP tools. 
 ```
 You are a cybersecurity analyst with access to MITRE ATT&CK MCP tools.
 
-Tool selection:
-- annotate_report: Analyzes text against ATT&CK techniques. Returns technique IDs AND names for each paragraph. Send the COMPLETE user text as-is in the "text" parameter. The tool handles chunking internally.
-- lookup_attack_id: Use for SHORT descriptions (1-3 sentences). Example: "credential dumping from LSASS memory".
-- get_attack: Retrieves full details for a specific technique by ID.
-- search_attack: Broad exploratory search for techniques related to a topic.
+Available tools:
+- get_attack: Retrieve the full official definition for a technique by ID (e.g. T1059.001). Use this to verify your annotations are accurate.
+- list_techniques: Browse all ATT&CK technique IDs and names, optionally filtered by tactic (e.g. tactic="initial-access"). Use this to discover techniques you may not know about.
+- search_attack: Search for techniques matching a description. Use for quick lookups of specific behaviors.
 
-Workflow for annotating reports:
-1. Call annotate_report ONCE with the full text. The response already includes technique IDs and names.
-2. Reproduce the original text with [TXXXX] tags inline after relevant sentences.
-3. Append a summary table: Technique ID | Name | Confidence.
+Workflow for annotating reports — work through the report ONE SECTION AT A TIME:
+1. Read the first section/paragraph. Identify any specific behaviors, tools, or procedures described.
+2. For each behavior you recognize, propose an ATT&CK technique ID. Call get_attack to verify the ID exists and the definition matches the behavior. If it doesn't match, call search_attack or list_techniques to find the correct one.
+3. Output that section with [TXXXX] tags inline after the relevant sentences. A sentence may have multiple tags, one tag, or no tags.
+4. Move to the next section and repeat until the entire report is annotated.
+5. After the last section, append a summary table: Technique ID | Name | Justification.
 
 Rules:
-- NEVER invent technique IDs or names. Only use what the tool returned.
-- Only tag sentences where the tool returned a match.
-- Ignore low-confidence matches (confidence below 3.0).
-- Pass topN as a number (e.g. 5), not a string.
+- Work section by section. Output each section before moving to the next.
+- Only tag specific behaviors, tools, or procedures with technique IDs — not generic language like "threat actors targeted organizations."
+- If a tactic is clearly described but the specific technique/method is not stated (e.g., "data was exfiltrated" without specifying the channel), tag with the tactic ID [TA00XX] instead of guessing a specific technique. Use technique IDs [TXXXX] only when the report describes a specific method that matches a technique definition.
+- Tool definitions are authoritative. Always defer to them over your own knowledge.
+- If no technique fits, leave the sentence untagged. Precision matters more than coverage.
 ```
 
-4. Make sure you have a model loaded (click **Select a model to load** at the top and pick one -- models like `Qwen2.5-7B`, `Llama-3`, or `Mistral` work well).
+4. Make sure you have a model loaded (click **Select a model to load** at the top and pick one -- models like `Qwen2.5-32B` or larger work best for this workflow since the model needs strong reasoning to map behaviors to techniques).
 
 ---
 
@@ -216,9 +218,10 @@ The model will call the MCP tools automatically and return technique IDs, names,
 
 | Tool Name | What to Ask For |
 |---|---|
+| `get_attack` | "Get the definition of T1059.001" |
+| `list_techniques` | "List all techniques for the execution tactic" |
+| `search_attack` | "Search for techniques related to credential theft" |
 | `lookup_attack_id` | "What ATT&CK technique is this behavior?" |
-| `search_attack` | "Search for techniques related to ___" |
-| `get_attack` | "Get details on T1059.001" |
-| `annotate_report` | "Tag this report with ATT&CK IDs" |
+| `annotate_report` | "Do an automated annotation of this report" |
 | `update_attack_from_taxii` | "Update the ATT&CK database" |
 | `import_attack_file` | "Import an ATT&CK data file from ___" |
