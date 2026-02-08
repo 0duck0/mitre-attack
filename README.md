@@ -10,14 +10,14 @@ Tests performed in LM Studio running on:
 - Memory:	128 GB
   
 Suggested models: 
-1. GPT-OSS-120b MXFP4 GGUF (Excellent accuracy and performance for this MCP)
-2. qwen2.5-32b-instruct Q4_K_M GGUF (Not great, but ok to annotate long reports accurately enough using this MCP toolset)
+1. openai/gpt-oss-120b MXFP4 \[GGUF\] (Excellent accuracy and performance for this MCP)
+2. qwen2.5-32b-instruct Q4_K_M \[GGUF\] (Not great, but ok to annotate long reports accurately enough using this MCP toolset)
 
 Other LLMs I tested that did NOT generate accurate enough results:
-- qwen2.5-7b-instruct-1m Q4_K_M GGUF
-- llama-primus-nemotron-70b-instruct-i1 Q5_K_M GGUF
-- SecGPT-14B-F16 GGUF
-- GPT-OSS-20b MXFP4 MLX
+- qwen2.5-7b-instruct-1m Q4_K_M \[GGUF\]
+- llama-primus-nemotron-70b-instruct-i1 Q5_K_M \[GGUF\]
+- SecGPT-14B-F16 \[GGUF\]
+- GPT-OSS-20b MXFP4 \[MLX\]
 
 ## Features
 - Hybrid matching: rule prefilter + embedding re‑rank.
