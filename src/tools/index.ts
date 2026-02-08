@@ -22,11 +22,18 @@ export type LookupResult = {
   matchedTokens: string[];
 };
 
+export type AnnotatedMatch = {
+  id: string;
+  name: string;
+  confidence: number;
+  matchedTokens: string[];
+};
+
 export type AnnotatedChunk = {
-  chunk: string;
+  chunkPreview: string;
   startOffset: number;
   endOffset: number;
-  matches: LookupResult[];
+  matches: AnnotatedMatch[];
 };
 
 function buildTechniqueText(technique: {
@@ -269,11 +276,21 @@ function chunkText(text: string, maxChunkSize: number): Array<{ chunk: string; s
 
     let cursor = 0;
     while (cursor < trimmed.length) {
-      const slice = trimmed.slice(cursor, cursor + maxChunkSize);
-      const sliceStart = start + cursor;
-      const sliceEnd = sliceStart + slice.length;
-      chunks.push({ chunk: slice, start: sliceStart, end: sliceEnd });
-      cursor += maxChunkSize;
+      let end = Math.min(cursor + maxChunkSize, trimmed.length);
+      // Avoid splitting mid-word: break at the last space before the limit.
+      if (end < trimmed.length) {
+        const spaceIdx = trimmed.lastIndexOf(" ", end);
+        if (spaceIdx > cursor) {
+          end = spaceIdx + 1;
+        }
+      }
+      const slice = trimmed.slice(cursor, end).trim();
+      if (slice) {
+        const sliceStart = start + cursor;
+        const sliceEnd = sliceStart + (end - cursor);
+        chunks.push({ chunk: slice, start: sliceStart, end: sliceEnd });
+      }
+      cursor = end;
     }
   }
 
@@ -305,11 +322,22 @@ export async function annotateReport(options: {
       domain
     });
 
+    const compactMatches: AnnotatedMatch[] = (matchResponse.data ?? []).map((m) => ({
+      id: m.id,
+      name: store.getTechniqueById(m.id)?.name ?? "Unknown",
+      confidence: Math.round(m.confidence * 100) / 100,
+      matchedTokens: m.matchedTokens
+    }));
+
+    const preview = chunk.chunk.length > 100
+      ? chunk.chunk.slice(0, 100) + "..."
+      : chunk.chunk;
+
     annotations.push({
-      chunk: chunk.chunk,
+      chunkPreview: preview,
       startOffset: chunk.start,
       endOffset: chunk.end,
-      matches: matchResponse.data ?? []
+      matches: compactMatches
     });
   }
 

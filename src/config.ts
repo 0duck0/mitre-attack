@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
 import { z } from "zod";
 
 const ConfigSchema = z.object({
@@ -26,5 +26,13 @@ export function loadConfig(pathFromEnv?: string): AttackMcpConfig {
 
   const raw = readFileSync(configPath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
-  return ConfigSchema.parse(parsed);
+  const config = ConfigSchema.parse(parsed);
+
+  // Resolve dataDir relative to the config file's directory (not CWD),
+  // so paths work correctly when spawned from LM Studio or other hosts.
+  const configDir = dirname(configPath);
+  const projectRoot = dirname(configDir);
+  config.dataDir = resolve(projectRoot, config.dataDir);
+
+  return config;
 }

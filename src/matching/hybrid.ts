@@ -23,12 +23,26 @@ export async function hybridMatch(options: {
   const { text, techniques, embeddings, embeddingProvider, limit, ruleWeight, embeddingWeight } = options;
 
   const prefilter = rulePrefilter(text, techniques, Math.max(limit * 10, 50));
-  const queryEmbedding = embeddingProvider ? await embeddingProvider.embed(text) : null;
+  let queryEmbedding: number[] | null = null;
+  if (embeddingProvider) {
+    try {
+      queryEmbedding = await embeddingProvider.embed(text);
+    } catch {
+      // Embedding endpoint unavailable; fall back to rule-only matching.
+    }
+  }
+
+  const useEmbeddings = queryEmbedding !== null;
 
   const matches = prefilter.map((candidate) => {
     const vector = embeddings.get(candidate.id);
-    const embeddingScore = queryEmbedding && vector ? cosineSimilarity(queryEmbedding, vector) : 0;
-    const score = ruleWeight * candidate.score + embeddingWeight * embeddingScore;
+    const embeddingScore = useEmbeddings && queryEmbedding && vector ? cosineSimilarity(queryEmbedding, vector) : 0;
+
+    // When embeddings are unavailable, use rule score directly instead of
+    // scaling it down by ruleWeight (which assumes embedding contribution).
+    const score = useEmbeddings
+      ? ruleWeight * candidate.score + embeddingWeight * embeddingScore
+      : candidate.score;
 
     return {
       id: candidate.id,

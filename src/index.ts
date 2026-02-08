@@ -54,13 +54,24 @@ function parseDomains(args?: Record<string, unknown>): Domain[] {
   const multiple = args?.domains;
   const valid: Domain[] = ["enterprise", "mobile", "ics"];
 
+  const normalize = (value: unknown): Domain | undefined => {
+    if (typeof value !== "string") return undefined;
+    const lower = value.trim().toLowerCase() as Domain;
+    return valid.includes(lower) ? lower : undefined;
+  };
+
+  // Handle domains as array or comma-separated string
   if (Array.isArray(multiple)) {
-    return multiple.filter((item): item is Domain => typeof item === "string" && valid.includes(item as Domain));
+    const parsed = multiple.map(normalize).filter((d): d is Domain => d !== undefined);
+    if (parsed.length > 0) return parsed;
+  } else if (typeof multiple === "string") {
+    const parsed = multiple.split(",").map(normalize).filter((d): d is Domain => d !== undefined);
+    if (parsed.length > 0) return parsed;
   }
 
-  if (typeof single === "string" && valid.includes(single as Domain)) {
-    return [single as Domain];
-  }
+  // Handle single domain (case-insensitive)
+  const parsed = normalize(single);
+  if (parsed) return [parsed];
 
   return ["enterprise"];
 }
@@ -73,11 +84,12 @@ const tools: McpTool[] = [
       type: "object",
       properties: {
         text: { type: "string" },
-        topN: { type: "number" },
-        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] },
+        topN: { type: ["number", "string"] },
+        domain: { type: "string", description: "ATT&CK domain: enterprise, mobile, or ics" },
         domains: {
-          type: "array",
-          items: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+          type: ["array", "string"],
+          items: { type: "string" },
+          description: "One or more ATT&CK domains: enterprise, mobile, ics"
         }
       },
       required: ["text"]
@@ -90,11 +102,12 @@ const tools: McpTool[] = [
       type: "object",
       properties: {
         text: { type: "string" },
-        topN: { type: "number" },
-        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] },
+        topN: { type: ["number", "string"] },
+        domain: { type: "string", description: "ATT&CK domain: enterprise, mobile, or ics" },
         domains: {
-          type: "array",
-          items: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+          type: ["array", "string"],
+          items: { type: "string" },
+          description: "One or more ATT&CK domains: enterprise, mobile, ics"
         }
       },
       required: ["text"]
@@ -107,10 +120,11 @@ const tools: McpTool[] = [
       type: "object",
       properties: {
         id: { type: "string" },
-        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] },
+        domain: { type: "string", description: "ATT&CK domain: enterprise, mobile, or ics" },
         domains: {
-          type: "array",
-          items: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+          type: ["array", "string"],
+          items: { type: "string" },
+          description: "One or more ATT&CK domains: enterprise, mobile, ics"
         }
       },
       required: ["id"]
@@ -122,10 +136,11 @@ const tools: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] },
+        domain: { type: "string", description: "ATT&CK domain: enterprise, mobile, or ics" },
         domains: {
-          type: "array",
-          items: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+          type: ["array", "string"],
+          items: { type: "string" },
+          description: "One or more ATT&CK domains: enterprise, mobile, ics"
         }
       }
     }
@@ -137,7 +152,7 @@ const tools: McpTool[] = [
       type: "object",
       properties: {
         path: { type: "string" },
-        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+        domain: { type: "string", description: "ATT&CK domain: enterprise, mobile, or ics" }
       },
       required: ["path"]
     }
@@ -149,11 +164,12 @@ const tools: McpTool[] = [
       type: "object",
       properties: {
         text: { type: "string" },
-        topN: { type: "number" },
-        domain: { type: "string", enum: ["enterprise", "mobile", "ics"] },
+        topN: { type: ["number", "string"] },
+        domain: { type: "string", description: "ATT&CK domain: enterprise, mobile, or ics" },
         domains: {
-          type: "array",
-          items: { type: "string", enum: ["enterprise", "mobile", "ics"] }
+          type: ["array", "string"],
+          items: { type: "string" },
+          description: "One or more ATT&CK domains: enterprise, mobile, ics"
         }
       },
       required: ["text"]
@@ -170,7 +186,10 @@ function asToolResult(payload: unknown): McpToolResult {
 }
 
 async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
-  const topN = typeof call.arguments?.topN === "number" ? call.arguments.topN : config.topNDefault;
+  const rawTopN = call.arguments?.topN;
+  const topN = typeof rawTopN === "number" ? rawTopN
+    : typeof rawTopN === "string" && rawTopN.trim() !== "" ? Number(rawTopN)
+    : config.topNDefault;
   const domains = parseDomains(call.arguments);
 
   switch (call.name) {
@@ -292,16 +311,16 @@ async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
       }
     case "import_attack_file":
       {
+        const importDomain = parseDomains(call.arguments)[0];
         const result = await importAttackFile({
           path: String(call.arguments?.path ?? ""),
           dataDir: config.dataDir,
           embeddingProvider,
           embeddingModel: config.embeddingModel,
-          domain: call.arguments?.domain as "enterprise" | "mobile" | "ics" | undefined
+          domain: importDomain
         });
         if (result.status === "ok") {
-          const domain = (call.arguments?.domain as Domain | undefined) ?? "enterprise";
-          refreshDomain(domain);
+          refreshDomain(importDomain);
         }
         return asToolResult(result);
       }
@@ -343,7 +362,7 @@ async function handleToolCall(call: McpToolCall): Promise<McpToolResult> {
             target.matches = mergedMatches.slice(0, topN);
           });
           return acc;
-        }, [] as Array<{ chunk: string; startOffset: number; endOffset: number; matches: Array<{ confidence: number }> }>);
+        }, [] as Array<{ chunkPreview: string; startOffset: number; endOffset: number; matches: Array<{ confidence: number }> }>);
 
         return asToolResult({
           status: "ok",
